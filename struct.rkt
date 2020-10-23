@@ -115,7 +115,7 @@
             (for ([t (in-list tables)])
               (define ls (hash-table-map t cons))
               (for ([p (in-list ls)]
-                    #:when (pair? (cdr p))
+                    #:break (not (pair? (cdr p)))
                     #:when (eq? (cadr p) pred))
                 (cc (car p))))))
         (values pred acc))))

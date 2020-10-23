@@ -49,7 +49,7 @@
    b 
    (append extra-shifts (if s (-syntax-mpi-shifts s) null))))
 
-(define (binding-table-symbols table scs s extra-shifts)
+(define (binding-table-symbols table scs s extra-shifts subset?)
   (define-values (ht bulk-bindings)
     (if (hash? table)
         (values table null)
@@ -57,24 +57,30 @@
                 (table-with-bulk-bindings-bulk-bindings table))))
   (hash-union
    (for/hasheq ([(sym at-sym) (in-hash ht)]
-                #:when (for/or ([an-scs (in-hash-keys at-sym)])
-                         (hash-keys-subset? an-scs scs)))
+                #:when (or (not subset?)
+                           (for/or ([an-scs (in-hash-keys at-sym)])
+                             (hash-keys-subset? an-scs scs))))
      (values sym #t))
    
    (for*/hasheq ([bba (in-list bulk-bindings)]
-                 #:when (hash-keys-subset? (bulk-binding-at-scopes bba) scs)
+                 #:when (or (not subset?)
+                            (hash-keys-subset? (bulk-binding-at-scopes bba) scs))
                  [sym (in-hash-keys
                        (bulk-binding-symbols (bulk-binding-at-bulk bba) s extra-shifts))])
      (values sym #t))))
 
 
-(define (syntax-mapped-names s [phase 0])
-  (define s-scs (syntax-scope-set s phase))
+(define (syntax-mapped-names s [phase 0]
+                             #:multi? [multi? #t]
+                             #:subset? [subset? #t])
+  (define s-scs (if multi?
+                    (syntax-scope-set s phase)
+                    (-syntax-scopes s)))
   (for/fold ([syms (hasheq)])
             ([sc (in-hash-keys s-scs)])
     (hash-union syms
                 (binding-table-symbols (scope-binding-table sc)
-                                       s-scs s null))))
+                                       s-scs s null subset?))))
 
 
 (module+ test
@@ -96,4 +102,15 @@
      (check-false (hash-has-key? syms 'x))
      (check-not-false (hash-has-key? syms 'memq))
      (check-not-false (hash-has-key? syms 'check-not-false))
-     (check-false (hash-has-key? syms 'syms)))))
+     (check-false (hash-has-key? syms 'syms))))
+  
+  (define id
+    (let ([x 1] [y 1])
+      (quote-syntax a #:local)))
+  
+  (test-case
+   "local"
+   (check-equal?
+    (syntax-mapped-names id
+                         #:multi? #f #:subset? #f)
+    #hasheq((x . #t) (y . #t)))))

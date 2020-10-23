@@ -1,6 +1,7 @@
 #lang racket/base
 (require "struct.rkt")
-(provide syntax-scope-set syntax-mapped-names)
+(provide syntax-scope-set syntax-mapped-names
+         syntax-multi-scope-set-at syntax-non-multi-scope-set)
 
 (define (syntax-scope-set s phase)
   (scope-set-at-fallback s (fallback-first (-syntax-shifted-multi-scopes s)) phase))
@@ -24,10 +25,10 @@
     (or (hash-ref scopes phase #f)
         (error 'multi-scope-to-scope-at-phase "didn't materialize"))))
 
-(define (scope-set-at-fallback s smss phase)
-  (for*/fold ([scopes (-syntax-scopes s)]) ([sms (in-hash-keys smss)]
-                                            #:when (or (label-phase? phase)
-                                                       (not (shifted-to-label-phase? (shifted-multi-scope-phase sms)))))
+(define (scope-set-at-fallback s smss phase [scopes (-syntax-scopes s)])
+  (for*/fold ([scopes scopes]) ([sms (in-hash-keys smss)]
+                                #:when (or (label-phase? phase)
+                                           (not (shifted-to-label-phase? (shifted-multi-scope-phase sms)))))
     (hash-set scopes
               (multi-scope-to-scope-at-phase (shifted-multi-scope-multi-scope sms)
                                              (let ([ph (shifted-multi-scope-phase sms)])
@@ -49,7 +50,7 @@
    b 
    (append extra-shifts (if s (-syntax-mpi-shifts s) null))))
 
-(define (binding-table-symbols table scs s extra-shifts subset?)
+(define (binding-table-symbols table scs s extra-shifts)
   (define-values (ht bulk-bindings)
     (if (hash? table)
         (values table null)
@@ -57,30 +58,35 @@
                 (table-with-bulk-bindings-bulk-bindings table))))
   (hash-union
    (for/hasheq ([(sym at-sym) (in-hash ht)]
-                #:when (or (not subset?)
+                #:when (or (not scs)
                            (for/or ([an-scs (in-hash-keys at-sym)])
                              (hash-keys-subset? an-scs scs))))
      (values sym #t))
    
    (for*/hasheq ([bba (in-list bulk-bindings)]
-                 #:when (or (not subset?)
+                 #:when (or (not scs)
                             (hash-keys-subset? (bulk-binding-at-scopes bba) scs))
                  [sym (in-hash-keys
                        (bulk-binding-symbols (bulk-binding-at-bulk bba) s extra-shifts))])
      (values sym #t))))
 
+(define (syntax-multi-scope-set-at s phase)
+  (scope-set-at-fallback s
+                         (fallback-first (-syntax-shifted-multi-scopes s))
+                         phase
+                         #hasheq()))
+
+(define (syntax-non-multi-scope-set s)
+  (-syntax-scopes s))
 
 (define (syntax-mapped-names s [phase 0]
-                             #:multi? [multi? #t]
-                             #:subset? [subset? #t])
-  (define s-scs (if multi?
-                    (syntax-scope-set s phase)
-                    (-syntax-scopes s)))
+                             #:usage-scopes [use-scopes (syntax-scope-set s phase)]
+                             #:binding-scopes [scopes use-scopes])
   (for/fold ([syms (hasheq)])
-            ([sc (in-hash-keys s-scs)])
+            ([sc (in-hash-keys scopes)])
     (hash-union syms
                 (binding-table-symbols (scope-binding-table sc)
-                                       s-scs s null subset?))))
+                                       use-scopes s null))))
 
 
 (module+ test
@@ -104,13 +110,11 @@
      (check-not-false (hash-has-key? syms 'check-not-false))
      (check-false (hash-has-key? syms 'syms))))
   
-  (define id
-    (let ([x 1] [y 1])
-      (quote-syntax a #:local)))
-  
   (test-case
    "local"
-   (check-equal?
-    (syntax-mapped-names id
-                         #:multi? #f #:subset? #f)
-    #hasheq((x . #t) (y . #t)))))
+   (let ([x 1] [y 1])
+     (define id (quote-syntax a #:local))
+     (check-equal?
+      (syntax-mapped-names id
+                           #:binding-scopes (syntax-non-multi-scope-set id))
+      #hasheq((x . #t) (y . #t) (id . #t))))))

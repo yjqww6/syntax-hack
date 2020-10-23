@@ -8,10 +8,7 @@
   (define (add-ids s)
     (for ([phase (in-list (syntax-multi-scope-available-phases s))])
       (identifier-binding (datum->syntax s 'x) phase)
-      (define names (syntax-mapped-names s phase
-                                         #:binding-scopes
-                                         (syntax-scope-set s phase)
-                                         #:usage-scopes #f))
+      (define names (syntax-mapped-names s phase))
       (for ([id (in-hash-keys names)])
         (set-add! h id))))
   (let loop ([stx stx] [phase phase])
@@ -59,4 +56,5 @@
                   (require (for-syntax (prefix-in g: 'b)))))))
     (check-true (set-member? s 'g:x))
     (check-true (set-member? s 'frame%))
-    (check-true (set-member? s 'k:x))))
+    (check-true (set-member? s 'k:x))
+    (check-true (set-member? s 'x))))

@@ -1,7 +1,8 @@
 #lang racket/base
-(require "struct.rkt")
+(require "struct.rkt" racket/list)
 (provide syntax-scope-set syntax-mapped-names
-         syntax-multi-scope-set-at syntax-non-multi-scope-set)
+         syntax-multi-scope-set-at syntax-non-multi-scope-set
+         syntax-multi-scope-available-phases)
 
 (define (syntax-scope-set s phase)
   (scope-set-at-fallback s (fallback-first (-syntax-shifted-multi-scopes s)) phase))
@@ -36,6 +37,13 @@
                                                    (shifted-to-label-phase-from ph)
                                                    (phase- ph phase))))
               #t)))
+
+(define (syntax-multi-scope-available-phases s)
+  (define smss (fallback-first (-syntax-shifted-multi-scopes s)))
+  (remove-duplicates
+   (for*/list ([sms (in-hash-keys smss)]
+               [p (in-hash-keys (unbox (multi-scope-scopes (shifted-multi-scope-multi-scope sms))))])
+     (- (shifted-multi-scope-phase sms) p))))
 
 
 (define (hash-union s1 s2)
